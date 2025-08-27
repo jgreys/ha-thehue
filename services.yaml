@@ -1,0 +1,32 @@
+force_refresh:
+  name: "Force CVNET Data Refresh"
+  description: "Forces an immediate refresh of all CVNET data, including re-authentication if needed"
+  fields:
+    entry_id:
+      name: "Config Entry ID" 
+      description: "The config entry ID for the CVNET integration (optional - will use first entry if not provided)"
+      required: false
+      selector:
+        text:
+
+clear_session:
+  name: "Clear CVNET Session"
+  description: "Clears the current session and forces re-authentication on next update"  
+  fields:
+    entry_id:
+      name: "Config Entry ID"
+      description: "The config entry ID for the CVNET integration (optional - will use first entry if not provided)"
+      required: false
+      selector:
+        text:
+
+session_info:
+  name: "Get CVNET Session Info"
+  description: "Returns diagnostic information about the current CVNET session"
+  fields:
+    entry_id:
+      name: "Config Entry ID"
+      description: "The config entry ID for the CVNET integration (optional - will use first entry if not provided)"
+      required: false
+      selector:
+        text:

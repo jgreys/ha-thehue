@@ -1,0 +1,135 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Hanshin The Hue CVNET",
+        "description": "Connect to your Hanshin The Hue apartment CVNET system",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        }
+      },
+      "options": {
+        "title": "Options",
+        "data": {
+          "notify_service": "Notification Service"
+        }
+      }
+    },
+    "error": {
+      "invalid_input": "Invalid input provided",
+      "invalid_auth": "Authentication failed",
+      "cannot_connect": "Failed to connect",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "Device is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Hanshin The Hue CVNET Options",
+        "data": {
+          "notify_service": "Notification Service"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "electricity": {
+        "name": "Electricity"
+      },
+      "water": {
+        "name": "Water"
+      },
+      "gas": {
+        "name": "Gas"
+      },
+      "visitors": {
+        "name": "Visitors"
+      },
+      "car_entries": {
+        "name": "Car Entries"
+      },
+      "room_temp": {
+        "name": "{room_name} Current Temperature"
+      }
+    },
+    "camera": {
+      "visitor": {
+        "name": "Visitor"
+      }
+    },
+    "button": {
+      "visitor_prev": {
+        "name": "Visitor Prev Page"
+      },
+      "visitor_next": {
+        "name": "Visitor Next Page"
+      },
+      "car_prev": {
+        "name": "Car Prev Page"
+      },
+      "car_next": {
+        "name": "Car Next Page"
+      }
+    },
+    "select": {
+      "visitor_rows": {
+        "name": "Visitor Rows"
+      },
+      "visitor_snapshot": {
+        "name": "Visitor Snapshot"
+      },
+      "car_rows": {
+        "name": "Car Rows"
+      }
+    },
+    "switch": {
+      "all_lights": {
+        "name": "All Lights"
+      }
+    },
+    "light": {
+      "living_room": {
+        "name": "Living Room"
+      },
+      "room": {
+        "name": "Room {number}"
+      }
+    },
+    "climate": {
+      "living_room_heating": {
+        "name": "Living Room Heating"
+      },
+      "room1_heating": {
+        "name": "Room 1 Heating"
+      },
+      "room2_heating": {
+        "name": "Room 2 Heating"
+      },
+      "room3_heating": {
+        "name": "Room 3 Heating"
+      }
+    }
+  },
+  "device": {
+    "visitors": {
+      "name": "Visitors"
+    },
+    "car_entrance": {
+      "name": "Car Entrance"
+    },
+    "lights": {
+      "name": "Lights"
+    },
+    "heating": {
+      "name": "Heating"
+    },
+    "telemeter": {
+      "name": "Telemeter"
+    }
+  }
+}

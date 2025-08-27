@@ -1,0 +1,14 @@
+{
+  "domain": "cvnet",
+  "name": "Hanshin The Hue CVNET",
+  "version": "1.0.0",
+  "documentation": "https://github.com/jgreys/ha-thehue",
+  "issue_tracker": "https://github.com/jgreys/ha-thehue/issues",
+  "codeowners": [
+    "@jgreys"
+  ],
+  "iot_class": "cloud_polling",
+  "config_flow": true,
+  "options_flow": true,
+  "requirements": []
+}

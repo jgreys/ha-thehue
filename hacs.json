@@ -1,0 +1,7 @@
+{
+  "name": "Hanshin The Hue CVNET",
+  "hacs": "1.6.0",
+  "domains": ["climate", "camera", "select", "light", "sensor", "button", "switch"],
+  "iot_class": "Cloud Polling",
+  "homeassistant": "2023.1.0"
+}

@@ -1,0 +1,135 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "한신더휴 CVNET",
+        "description": "한신더휴 아파트 CVNET 시스템에 연결",
+        "data": {
+          "username": "사용자명",
+          "password": "비밀번호"
+        }
+      },
+      "options": {
+        "title": "옵션",
+        "data": {
+          "notify_service": "알림 서비스"
+        }
+      }
+    },
+    "error": {
+      "invalid_input": "잘못된 입력입니다",
+      "invalid_auth": "인증 실패",
+      "cannot_connect": "연결 실패",
+      "unknown": "예기치 않은 오류"
+    },
+    "abort": {
+      "already_configured": "기기가 이미 설정되어 있습니다"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "한신더휴 CVNET 옵션",
+        "data": {
+          "notify_service": "알림 서비스"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "electricity": {
+        "name": "전기"
+      },
+      "water": {
+        "name": "수도"
+      },
+      "gas": {
+        "name": "가스"
+      },
+      "visitors": {
+        "name": "방문자"
+      },
+      "car_entries": {
+        "name": "차량 출입"
+      },
+      "room_temp": {
+        "name": "{room_name} 현재온도"
+      }
+    },
+    "camera": {
+      "visitor": {
+        "name": "방문자"
+      }
+    },
+    "button": {
+      "visitor_prev": {
+        "name": "방문자 이전 페이지"
+      },
+      "visitor_next": {
+        "name": "방문자 다음 페이지"
+      },
+      "car_prev": {
+        "name": "차량 이전 페이지"
+      },
+      "car_next": {
+        "name": "차량 다음 페이지"
+      }
+    },
+    "select": {
+      "visitor_rows": {
+        "name": "방문자 행 수"
+      },
+      "visitor_snapshot": {
+        "name": "방문자 스냅샷"
+      },
+      "car_rows": {
+        "name": "차량 행 수"
+      }
+    },
+    "switch": {
+      "all_lights": {
+        "name": "전체 조명"
+      }
+    },
+    "light": {
+      "living_room": {
+        "name": "거실"
+      },
+      "room": {
+        "name": "방 {number}"
+      }
+    },
+    "climate": {
+      "living_room_heating": {
+        "name": "거실 난방"
+      },
+      "room1_heating": {
+        "name": "방1 난방"
+      },
+      "room2_heating": {
+        "name": "방2 난방"
+      },
+      "room3_heating": {
+        "name": "방3 난방"
+      }
+    }
+  },
+  "device": {
+    "visitors": {
+      "name": "방문자"
+    },
+    "car_entrance": {
+      "name": "차량 출입구"
+    },
+    "lights": {
+      "name": "조명"
+    },
+    "heating": {
+      "name": "난방"
+    },
+    "telemeter": {
+      "name": "계량기"
+    }
+  }
+}
