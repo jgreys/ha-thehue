@@ -9,7 +9,7 @@ from aiohttp import ClientError, ServerDisconnectedError, WSMsgType
 import secrets
 import random
 
-from .const import (
+from ..const import (
     BASE,
     DEFAULT_TIMEOUT_S,
     DEFAULT_WS_BASE,
