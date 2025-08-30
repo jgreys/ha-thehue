@@ -5,6 +5,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from ..const import DOMAIN, MAX_VISITOR_ATTRIBUTES
 from ..core.coordinator import CvnetCoordinator
 
@@ -22,9 +23,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     visitors_sensor = CvnetVisitorsSensor(coord)
     visitors_sensor.set_hass(hass)
     entities.append(visitors_sensor)
-    car_entries_sensor = CvnetCarEntriesSensor(coord, entry)
-    car_entries_sensor.set_hass(hass)
-    entities.append(car_entries_sensor)
+    entities.append(CvnetCarEntriesSensor(coord, entry))
     async_add_entities(entities, update_before_add=False)
 
 class BaseEntity(SensorEntity):
@@ -187,13 +186,14 @@ class CvnetVisitorsSensor(BaseEntity):
             self._last_notified_date = dt
 
 
-class CvnetCarEntriesSensor(BaseEntity):
+class CvnetCarEntriesSensor(CoordinatorEntity, BaseEntity):
     """Sensor that exposes the latest car entrance list with pagination info."""
 
     _attr_icon = "mdi:car-info"
 
     def __init__(self, coordinator: CvnetCoordinator, entry: ConfigEntry) -> None:
-        super().__init__(coordinator)
+        CoordinatorEntity.__init__(self, coordinator)
+        BaseEntity.__init__(self, coordinator)
         self._attr_name = "Car Entries"
         self._attr_unique_id = f"{entry.entry_id}_car_entries"
         self._attr_device_info = DeviceInfo(
@@ -201,11 +201,6 @@ class CvnetCarEntriesSensor(BaseEntity):
             name="Car Entrance",
             manufacturer="CVNET",
         )
-        self._last_notified_date: str | None = None
-        self._hass: HomeAssistant | None = None
-
-    def set_hass(self, hass: HomeAssistant):
-        self._hass = hass
 
     @property
     def native_value(self):
@@ -224,37 +219,3 @@ class CvnetCarEntriesSensor(BaseEntity):
             "exist_next": car.get("exist_next"),
         }
 
-    async def async_update(self):
-        car = self.coordinator.car_state()
-        # Notification logic
-        from datetime import datetime
-        today = datetime.now().strftime("%Y-%m-%d")
-        new_entry = None
-        for v in car.get("contents", []):
-            dt = v.get("date_time", "")
-            if dt.startswith(today):
-                if self._last_notified_date != dt:
-                    new_entry = v
-                    break
-        if new_entry and self._hass:
-            # Send notification using configured notify service
-            notify_service = None
-            if hasattr(self._hass, 'config_entries'):
-                entries = self._hass.config_entries.async_entries(DOMAIN)
-                if entries:
-                    entry = entries[0]
-                    notify_service = entry.options.get("notify_service")
-            if not notify_service:
-                notify_service = "persistent_notification.create"  # fallback to persistent notification
-            title = new_entry.get("title", "New Car Entry")
-            dt = new_entry.get("date_time", "")
-            await self._hass.services.async_call(
-                "notify",
-                notify_service,
-                {
-                    "message": f"New car entry: {title} at {dt}",
-                    "title": "CVNET Car Entry Alert"
-                },
-                blocking=True
-            )
-            self._last_notified_date = dt

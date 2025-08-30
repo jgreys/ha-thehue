@@ -13,13 +13,6 @@ DATA_SCHEMA = vol.Schema({
 })
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    async def async_step_options(self, user_input=None):
-        options_schema = vol.Schema({
-            vol.Required("notify_service", default=(self.options.get("notify_service") if self.options else "")): str
-        })
-        if user_input is not None:
-            return self.async_create_entry(title="Options", data=user_input)
-        return self.async_show_form(step_id="options", data_schema=options_schema)
     async def async_step_user(self, user_input=None) -> FlowResult:
         """Handle the initial step."""
         errors = {}
