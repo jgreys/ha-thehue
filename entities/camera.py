@@ -34,6 +34,25 @@ class CvnetVisitorCamera(Camera):
             name="Visitors",
             manufacturer="CVNET"
         )
+        self._unsubscribe = None
+    
+    async def async_added_to_hass(self) -> None:
+        """Subscribe to coordinator updates."""
+        await super().async_added_to_hass()
+        
+        def _handle_coordinator_update() -> None:
+            """Handle updated data from the coordinator."""
+            # Signal that image has changed
+            self.async_write_ha_state()
+        
+        # Subscribe to coordinator updates
+        self._unsubscribe = self.coordinator.async_add_listener(_handle_coordinator_update)
+    
+    async def async_will_remove_from_hass(self) -> None:
+        """Unsubscribe from coordinator updates."""
+        if self._unsubscribe:
+            self._unsubscribe()
+        await super().async_will_remove_from_hass()
 
     async def async_camera_image(self, width: int | None = None, height: int | None = None) -> bytes | None:
         file_name = self.coordinator.get_visitor_selected()
