@@ -175,7 +175,10 @@ class CvnetCoordinator(DataUpdateCoordinator[dict]):
 
     def set_visitor_selected(self, file_name: str) -> None:
         self._selected = file_name
-        self.async_set_updated_data({"selected": file_name})
+        # Merge selection into existing data instead of replacing it
+        updated_data = dict(self.data) if self.data else {}
+        updated_data["selected"] = file_name
+        self.async_set_updated_data(updated_data)
 
     # ---------- Car entries controls ----------
     async def async_car_set_rows(self, rows: int) -> None:
