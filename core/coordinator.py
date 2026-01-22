@@ -113,6 +113,19 @@ class CvnetCoordinator(DataUpdateCoordinator[dict]):
         except Exception as err:
             _LOGGER.error("Unexpected error during entrancecar_list update: %s", err)
 
+        # Refresh heater status via websocket
+        heater_data = {}
+        try:
+            heater_data = await self.client.async_status_snapshot("22")
+            if heater_data:
+                _LOGGER.warning("Heater status updated successfully with %d rooms", len(heater_data.get("body", {}).get("contents", [])))
+            else:
+                _LOGGER.warning("Heater status_snapshot returned empty data")
+        except (ApiError, ConnectionError) as err:
+            _LOGGER.warning("heater status_snapshot failed during update: %s", err)
+        except Exception as err:
+            _LOGGER.warning("heater status_snapshot error: %s", err)
+
         # Only fail the entire update if both critical data sources fail
         if not visitor_success and not car_success:
             _LOGGER.error("Both visitor and car data updates failed - this may indicate session expiration or connectivity issues")
@@ -136,6 +149,7 @@ class CvnetCoordinator(DataUpdateCoordinator[dict]):
                 "rows": self._car_rows,
                 "exist_next": self._car_exist_next,
             },
+            "heaters": heater_data,
         }
 
     # Visitor pagination controls

@@ -5,7 +5,7 @@ DOMAIN = "cvnet"
 # Base URLs and defaults
 BASE = "https://js-thehue.uasis.com"
 DEFAULT_TIMEOUT_S = 10  # seconds
-DEFAULT_UPDATE_INTERVAL = 5  # minutes
+DEFAULT_UPDATE_INTERVAL = 1  # minutes
 DEFAULT_VISITOR_ROWS = 5
 DEFAULT_CAR_ROWS = 5
 MAX_VISITOR_ATTRIBUTES = 8  # Limit for state attributes to avoid 16KB cap

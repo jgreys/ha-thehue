@@ -344,8 +344,9 @@ class Client:
         return json.dumps([json.dumps(obj, separators=(",", ":"), ensure_ascii=False)], separators=(",", ":"), ensure_ascii=False)
 
     def _build_publish_payload(self, address: str, body: Dict[str, Any]) -> str:
+        # Use username as id (matches what the website uses), fall back to dev_id
         inner_body = {
-            "id": body.get("id", self._dev_id or self._username or "homeassistant"),
+            "id": body.get("id", self._username or self._dev_id or "homeassistant"),
             "remote_addr": body.get("remote_addr", self._remote_addr or "127.0.0.1"),
             "request": body["request"],
         }
@@ -358,7 +359,8 @@ class Client:
             "body": json.dumps(inner_body, separators=(",", ":"), ensure_ascii=False),
         }
         payload = self._outer_array_of(envelope)
-        _LOGGER.debug("SockJS payload (lights/heaters): %s", payload)
+        _LOGGER.debug("SockJS publish payload - id=%s, remote_addr=%s, body=%s",
+                      inner_body.get("id"), inner_body.get("remote_addr"), inner_body)
         return payload
 
     def _build_register_payload(self, address: str) -> str:
@@ -368,7 +370,8 @@ class Client:
         return payload
 
     def _build_login_payload(self) -> str:
-        username = self._dev_id or self._username or "homeassistant"
+        # Use username (matches what the website uses), fall back to dev_id
+        username = self._username or self._dev_id or "homeassistant"
         # Use actual password from credentials instead of hardcoded value
         password = self._creds[1] if self._creds and len(self._creds) > 1 else "cvnet"
         envelope = {"type": "send", "address": "vertx.basicauthmanager.login", "body": {"username": username, "password": password}}
@@ -376,27 +379,44 @@ class Client:
         _LOGGER.debug("SockJS login payload: %s", payload)
         return payload
 
+    def _is_ws_healthy(self) -> bool:
+        """Check if websocket connection is healthy and usable."""
+        if not self._ws:
+            return False
+        if self._ws.closed:
+            return False
+        # Check if the underlying transport is still valid
+        try:
+            if hasattr(self._ws, '_writer') and self._ws._writer:
+                transport = getattr(self._ws._writer, 'transport', None)
+                if transport and transport.is_closing():
+                    return False
+        except Exception:
+            pass
+        return True
+
     async def _ensure_ws(self, force_new: bool = False) -> aiohttp.ClientWebSocketResponse:
         """Ensure WebSocket connection is established and ready.
-        
+
         Args:
             force_new: Force creation of new connection even if existing one is available
-            
+
         Returns:
             Active WebSocket connection
-            
+
         Raises:
             ConnectionError: If connection cannot be established
         """
-        if not force_new and self._ws and not self._ws.closed:
+        if not force_new and self._is_ws_healthy():
             return self._ws
-            
+
         # Clean up existing connection
-        if self._ws and not self._ws.closed:
+        if self._ws:
             try:
                 await self._ws.close()
             except Exception as e:
                 _LOGGER.debug("Error closing existing WS connection: %s", e)
+            self._ws = None
                 
         try:
             await self.async_device_info("0x12")
@@ -479,6 +499,7 @@ class Client:
 
     async def async_publish(self, address: str, body: dict) -> dict:
         payload_text = self._build_publish_payload(str(address), body)
+        _LOGGER.warning("Publishing to address %s: %s", address, body)
         last_err: Optional[Exception] = None
         for attempt in range(2):
             try:
@@ -486,19 +507,20 @@ class Client:
                 await self._ensure_ws(force_new=(attempt > 0))
                 await self._ensure_registered(str(address))
                 await self._ws.send_str(payload_text)
-                _LOGGER.debug("Publish sent on WS (attempt %s)", attempt + 1)
+                _LOGGER.warning("Publish sent on WS (attempt %s) - success", attempt + 1)
                 try:
                     msg = await self._ws.receive(timeout=1.0)
                     _LOGGER.debug("WS post-publish frame: type=%s data=%s", msg.type, getattr(msg, "data", None))
                 except asyncio.TimeoutError:
-                    _LOGGER.debug("WS post-publish: no immediate reply")
+                    pass  # No immediate reply is normal
                 try:
                     await self._xhr_send(payload_text)
+                    _LOGGER.debug("XHR_SEND fallback also sent")
                 except Exception as e:
                     _LOGGER.debug("XHR_SEND fallback failed (ignored): %s", e)
                 return {}
             except (ServerDisconnectedError, ClientError, ApiError, asyncio.TimeoutError) as e:
-                _LOGGER.debug("Publish attempt %s failed: %s", attempt + 1, e)
+                _LOGGER.warning("Publish attempt %s failed: %s", attempt + 1, e)
                 last_err = e
                 if self._ws and not self._ws.closed:
                     try:
@@ -507,35 +529,62 @@ class Client:
                         pass
                 self._ws = None
                 continue
+        _LOGGER.error("Publish failed after retries: %s", last_err)
         raise ApiError(str(last_err) if last_err else "Publish failed")
 
     async def async_status_snapshot(self, address: str = "22") -> dict:
         payload_text = self._build_publish_payload(str(address), {"request": "status"})
-        try:
-            await self._ensure_registered(str(address))
-            await self._ws.send_str(payload_text)
-            for _ in range(6):
-                msg = await self._ws.receive(timeout=2.0)
-                _LOGGER.debug("WS status frame: type=%s data=%s", msg.type, getattr(msg, "data", None))
-                if msg.type == WSMsgType.TEXT and isinstance(msg.data, str) and msg.data.startswith("a["):
+
+        for attempt in range(2):
+            try:
+                _LOGGER.debug("Sending status request for address %s (attempt %d)", address, attempt + 1)
+                # Always force new connection for status requests to avoid stale connections
+                await self._ensure_ws(force_new=True)
+                await self._ensure_registered(str(address))
+                await self._ws.send_str(payload_text)
+
+                for i in range(6):
                     try:
-                        arr = json.loads(msg.data[1:])
-                        if not arr:
-                            continue
-                        inner = arr[0]
-                        data = json.loads(inner) if isinstance(inner, str) else inner
-                        body = data.get("body")
-                        if isinstance(body, str):
+                        msg = await self._ws.receive(timeout=2.0)
+                        msg_data = getattr(msg, "data", None)
+                        _LOGGER.debug("WS status frame %d: type=%s", i, msg.type)
+                        if msg.type == WSMsgType.TEXT and isinstance(msg.data, str) and msg.data.startswith("a["):
                             try:
-                                data["body"] = json.loads(body)
-                            except Exception:
-                                pass
-                        return data
-                    except Exception:
+                                arr = json.loads(msg.data[1:])
+                                if not arr:
+                                    continue
+                                inner = arr[0]
+                                data = json.loads(inner) if isinstance(inner, str) else inner
+                                body = data.get("body")
+                                if isinstance(body, str):
+                                    try:
+                                        data["body"] = json.loads(body)
+                                    except Exception:
+                                        pass
+                                _LOGGER.debug("Parsed heater data successfully")
+                                return data
+                            except Exception as ex:
+                                _LOGGER.debug("Failed to parse WS message: %s", ex)
+                                continue
+                    except asyncio.TimeoutError:
                         continue
-        except Exception as e:
-            _LOGGER.debug("status_snapshot failed: %s", e)
-            return {}
+                # No valid response, try with new connection
+                _LOGGER.debug("No valid response, will retry with new connection")
+
+            except Exception as e:
+                _LOGGER.debug("status_snapshot attempt %d failed: %s", attempt + 1, e)
+                # Close bad connection before retry
+                if self._ws:
+                    try:
+                        await self._ws.close()
+                    except Exception:
+                        pass
+                    self._ws = None
+                if attempt == 0:
+                    continue  # Retry with new connection
+                return {}
+
+        _LOGGER.debug("status_snapshot: no valid response after retries")
         return {}
 
     async def async_close(self):

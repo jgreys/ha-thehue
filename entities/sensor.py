@@ -20,9 +20,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     coord: CvnetCoordinator = hass.data[DOMAIN][entry.entry_id]
     entities = [ElecSensor(coord), WaterSensor(coord), GasSensor(coord)]
     entities.extend([RoomTempSensor(coord, r) for r in ROOMS])
-    visitors_sensor = CvnetVisitorsSensor(coord)
-    visitors_sensor.set_hass(hass)
-    entities.append(visitors_sensor)
+    entities.append(CvnetVisitorsSensor(coord))
     entities.append(CvnetCarEntriesSensor(coord, entry))
     async_add_entities(entities, update_before_add=False)
 
@@ -91,12 +89,13 @@ class RoomTempSensor(BaseEntity):
 
 
 
-class CvnetVisitorsSensor(BaseEntity):
+class CvnetVisitorsSensor(CoordinatorEntity, BaseEntity):
     """Unified sensor for visitor list, selection, and image."""
     _attr_icon = "mdi:account-group"
 
     def __init__(self, coordinator: CvnetCoordinator):
-        super().__init__(coordinator)
+        CoordinatorEntity.__init__(self, coordinator)
+        BaseEntity.__init__(self, coordinator)
         self._attr_name = "Visitors"
         self._attr_unique_id = "cvnet_visitors"
         self._attr_device_info = DeviceInfo(
@@ -107,11 +106,6 @@ class CvnetVisitorsSensor(BaseEntity):
         self._file_name: str | None = None
         self._image_data_url: str | None = None
         self._visitor_list: list = []
-        self._last_notified_date: str | None = None
-        self._hass: HomeAssistant | None = None
-
-    def set_hass(self, hass: HomeAssistant):
-        self._hass = hass
 
     @property
     def native_value(self):
@@ -137,8 +131,11 @@ class CvnetVisitorsSensor(BaseEntity):
         }
         return attrs
 
-    async def async_update(self):
-        # Get latest visitor list and selected file_name
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        super()._handle_coordinator_update()
+        
+        # Update visitor data when coordinator updates
         items = (self.coordinator.data.get("vis") or {}).get("contents") if self.coordinator.data else None
         self._visitor_list = items or []
         file_name = self.coordinator.get_visitor_selected()
@@ -150,40 +147,6 @@ class CvnetVisitorsSensor(BaseEntity):
             return
         # Don't fetch/store full base64 here (keeps state small). Camera entity retrieves image on demand.
         self._image_data_url = None
-
-        # Notification logic
-        from datetime import datetime
-        today = datetime.now().strftime("%Y-%m-%d")
-        new_visitor = None
-        for v in self._visitor_list:
-            dt = v.get("date_time", "")
-            if dt.startswith(today):
-                if self._last_notified_date != dt:
-                    new_visitor = v
-                    break
-        if new_visitor and self._hass:
-            # Send notification using configured notify service
-            notify_service = None
-            if hasattr(self._hass, 'config_entries'):
-                # Try to get from config entry options
-                entries = self._hass.config_entries.async_entries(DOMAIN)
-                if entries:
-                    entry = entries[0]
-                    notify_service = entry.options.get("notify_service")
-            if not notify_service:
-                notify_service = "persistent_notification.create"  # fallback to persistent notification
-            title = new_visitor.get("title", "New Visitor")
-            dt = new_visitor.get("date_time", "")
-            await self._hass.services.async_call(
-                "notify",
-                notify_service,
-                {
-                    "message": f"New visitor: {title} at {dt}",
-                    "title": "CVNET Visitor Alert"
-                },
-                blocking=True
-            )
-            self._last_notified_date = dt
 
 
 class CvnetCarEntriesSensor(CoordinatorEntity, BaseEntity):
