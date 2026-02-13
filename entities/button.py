@@ -20,6 +20,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         CvnetCarNextPageButton(coord, entry),
         CvnetVisitorPrevPageButton(coord, entry),
         CvnetVisitorNextPageButton(coord, entry),
+        CvnetGasValveCloseButton(coord, entry),
+        CvnetHeatingAllOnButton(coord, entry),
+        CvnetHeatingAllOffButton(coord, entry),
     ], update_before_add=False)
 class _BaseVisitorButton(ButtonEntity):
     def __init__(self, coordinator: CvnetCoordinator, entry: ConfigEntry, name: str, uid: str) -> None:
@@ -80,3 +83,62 @@ class CvnetCarNextPageButton(_BaseCarButton):
 
     async def async_press(self) -> None:
         await self.coordinator.async_car_next_page()
+
+
+class _BaseSystemButton(ButtonEntity):
+    """Base class for system-level buttons (gas valve, heating controls)."""
+
+    def __init__(self, coordinator: CvnetCoordinator, entry: ConfigEntry, name: str, uid: str) -> None:
+        self.coordinator = coordinator
+        self._entry = entry
+        self._attr_name = name
+        self._attr_unique_id = f"{entry.entry_id}_{uid}"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, f"{entry.entry_id}_system")},
+            name="CVNET System",
+            manufacturer="CVNET",
+        )
+
+
+class CvnetGasValveCloseButton(_BaseSystemButton):
+    """Button to close the gas valve. Opening requires physical access for safety."""
+
+    _attr_icon = "mdi:valve-closed"
+
+    def __init__(self, coordinator: CvnetCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry, "Close Gas Valve", "gas_valve_close")
+
+    async def async_press(self) -> None:
+        body = {"request": "control", "number": "1", "onoff": "0"}
+        await self.coordinator.client.async_publish(address="17", body=body)
+        _LOGGER.info("Gas valve CLOSE command sent")
+
+
+class CvnetHeatingAllOnButton(_BaseSystemButton):
+    """Button to turn all heating zones ON."""
+
+    _attr_icon = "mdi:radiator"
+
+    def __init__(self, coordinator: CvnetCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry, "Heating All ON", "heating_all_on")
+
+    async def async_press(self) -> None:
+        body = {"request": "control_all", "onoff": "1"}
+        await self.coordinator.client.async_publish(address="22", body=body)
+        _LOGGER.info("Heating ALL ON command sent")
+        await self.coordinator.async_request_refresh()
+
+
+class CvnetHeatingAllOffButton(_BaseSystemButton):
+    """Button to turn all heating zones OFF."""
+
+    _attr_icon = "mdi:radiator-off"
+
+    def __init__(self, coordinator: CvnetCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry, "Heating All OFF", "heating_all_off")
+
+    async def async_press(self) -> None:
+        body = {"request": "control_all", "onoff": "0"}
+        await self.coordinator.client.async_publish(address="22", body=body)
+        _LOGGER.info("Heating ALL OFF command sent")
+        await self.coordinator.async_request_refresh()

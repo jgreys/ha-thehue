@@ -16,10 +16,10 @@ _LOGGER = logging.getLogger(__name__)
 class CvnetCoordinator(DataUpdateCoordinator[dict]):
     def __init__(self, hass: HomeAssistant, entry) -> None:
         super().__init__(
-            hass, 
-            _LOGGER, 
-            name="cvnet", 
-            update_interval=timedelta(minutes=DEFAULT_UPDATE_INTERVAL)
+            hass,
+            _LOGGER,
+            name="cvnet",
+            update_interval=timedelta(seconds=DEFAULT_UPDATE_INTERVAL)
         )
         self.hass = hass
         self.entry = entry
@@ -35,6 +35,10 @@ class CvnetCoordinator(DataUpdateCoordinator[dict]):
         self._car_page_no = 1
         self._car_exist_next = False
         self._car_contents = []
+        # Tracking for new visitor/car notifications
+        self._seen_visitors: set[str] = set()
+        self._seen_cars: set[str] = set()  # Track by "title_datetime" composite key
+        self._first_run: bool = True
 
     async def async_prime_visitors(self) -> None:
         try:
@@ -118,13 +122,26 @@ class CvnetCoordinator(DataUpdateCoordinator[dict]):
         try:
             heater_data = await self.client.async_status_snapshot("22")
             if heater_data:
-                _LOGGER.warning("Heater status updated successfully with %d rooms", len(heater_data.get("body", {}).get("contents", [])))
+                _LOGGER.debug("Heater status updated successfully with %d rooms", len(heater_data.get("body", {}).get("contents", [])))
             else:
-                _LOGGER.warning("Heater status_snapshot returned empty data")
+                _LOGGER.debug("Heater status_snapshot returned empty data")
         except (ApiError, ConnectionError) as err:
             _LOGGER.warning("heater status_snapshot failed during update: %s", err)
         except Exception as err:
             _LOGGER.warning("heater status_snapshot error: %s", err)
+
+        # Refresh light status via websocket
+        light_data = {}
+        try:
+            light_data = await self.client.async_status_snapshot("18")
+            if light_data:
+                _LOGGER.debug("Light status updated successfully")
+            else:
+                _LOGGER.debug("Light status_snapshot returned empty data")
+        except (ApiError, ConnectionError) as err:
+            _LOGGER.warning("light status_snapshot failed during update: %s", err)
+        except Exception as err:
+            _LOGGER.warning("light status_snapshot error: %s", err)
 
         # Only fail the entire update if both critical data sources fail
         if not visitor_success and not car_success:
@@ -133,6 +150,18 @@ class CvnetCoordinator(DataUpdateCoordinator[dict]):
             if hasattr(self.client, '_last_successful_request'):
                 self.client._last_successful_request = None  # Force session expiration check
             raise UpdateFailed("All data sources failed - session may be expired")
+
+        # Check for new visitors and fire notifications
+        if visitor_success:
+            await self._check_new_visitors()
+
+        # Check for new car entries and fire notifications
+        if car_success:
+            await self._check_new_car_entries()
+
+        # Mark first run as complete
+        if self._first_run:
+            self._first_run = False
 
         return {
             "ok": True,
@@ -150,6 +179,7 @@ class CvnetCoordinator(DataUpdateCoordinator[dict]):
                 "exist_next": self._car_exist_next,
             },
             "heaters": heater_data,
+            "lights": light_data,
         }
 
     # Visitor pagination controls
@@ -240,3 +270,80 @@ class CvnetCoordinator(DataUpdateCoordinator[dict]):
             await self.client.async_close()
         except Exception:
             pass
+
+    async def _check_new_visitors(self) -> None:
+        """Check for new visitors and fire events/notifications."""
+        current = {v.get("file_name") for v in self._visitor_list if v.get("file_name")}
+
+        if not self._first_run:
+            new_visitors = current - self._seen_visitors
+            for file_name in new_visitors:
+                # Find visitor data
+                visitor_data = next(
+                    (v for v in self._visitor_list if v.get("file_name") == file_name),
+                    None
+                )
+                if visitor_data:
+                    _LOGGER.info("New visitor detected: %s", file_name)
+                    # Select the new visitor so the camera shows their image
+                    self._selected = file_name
+                    # Fire event
+                    self.hass.bus.async_fire("cvnet_new_visitor", {
+                        "file_name": file_name,
+                        "date_time": visitor_data.get("date_time"),
+                        "title": visitor_data.get("title"),
+                    })
+                    # Create persistent notification
+                    await self.hass.services.async_call(
+                        "persistent_notification",
+                        "create",
+                        {
+                            "title": "New Visitor",
+                            "message": f"Visitor at {visitor_data.get('date_time', 'unknown time')}",
+                            "notification_id": f"cvnet_visitor_{file_name}",
+                        },
+                    )
+
+        self._seen_visitors = current
+
+    async def _check_new_car_entries(self) -> None:
+        """Check for new car entries and fire events/notifications."""
+        # Create unique key from title + datetime
+        current = {
+            f"{c.get('title')}_{c.get('date_time')}"
+            for c in self._car_contents
+            if c.get("title") and c.get("date_time")
+        }
+
+        if not self._first_run:
+            new_cars = current - self._seen_cars
+            for car_key in new_cars:
+                # Find car data
+                car_data = next(
+                    (c for c in self._car_contents
+                     if f"{c.get('title')}_{c.get('date_time')}" == car_key),
+                    None
+                )
+                if car_data:
+                    inout = "entered" if car_data.get("inout") == "0" else "exited"
+                    plate = car_data.get("title")
+                    date_time = car_data.get("date_time")
+                    _LOGGER.info("Car %s: %s at %s", inout, plate, date_time)
+                    # Fire event
+                    self.hass.bus.async_fire("cvnet_car_entry", {
+                        "plate": plate,
+                        "date_time": date_time,
+                        "direction": inout,
+                    })
+                    # Create persistent notification
+                    await self.hass.services.async_call(
+                        "persistent_notification",
+                        "create",
+                        {
+                            "title": f"Car {inout.title()}",
+                            "message": f"{plate} {inout} at {date_time}",
+                            "notification_id": f"cvnet_car_{car_key.replace(' ', '_')}",
+                        },
+                    )
+
+        self._seen_cars = current

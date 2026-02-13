@@ -36,7 +36,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     async_add_entities(entities)
 
 
-def _clamp_int_temp(val: Any, minimum: int = 5, maximum: int = 40) -> int:
+def _clamp_int_temp(val: Any, minimum: int = 5, maximum: int = 35) -> int:
     try:
         ival = int(round(float(val)))
     except Exception:
@@ -49,7 +49,7 @@ class CVNETClimate(CoordinatorEntity, ClimateEntity):
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT]
     _attr_min_temp = 5
-    _attr_max_temp = 40
+    _attr_max_temp = 35
     _attr_precision = 1.0
     _attr_target_temperature_step = 1
 
