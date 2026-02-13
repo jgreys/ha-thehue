@@ -36,10 +36,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.warning("cvnet: platform %s forward failed: %s", plat, e)
     _LOGGER.info("cvnet: platforms forwarded = %s", loaded)
     
+    # Listen for options updates
+    entry.async_on_unload(
+        entry.add_update_listener(_async_update_options)
+    )
+
     # Register services
     await _async_setup_services(hass)
-    
+
     return True
+
+
+async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Handle options update."""
+    coord: CvnetCoordinator = hass.data[DOMAIN].get(entry.entry_id)
+    if coord:
+        coord.apply_options(dict(entry.options))
+        await coord.async_request_refresh()
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)

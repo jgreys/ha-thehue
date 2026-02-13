@@ -31,7 +31,9 @@
       "init": {
         "title": "Hanshin The Hue CVNET Options",
         "data": {
-          "notify_service": "Notification Service"
+          "update_interval": "Update Interval (seconds)",
+          "visitor_rows": "Visitor Rows per Page",
+          "car_rows": "Car Entry Rows per Page"
         }
       }
     }

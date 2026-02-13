@@ -8,18 +8,22 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from ..const import DOMAIN, DEFAULT_UPDATE_INTERVAL, DEFAULT_VISITOR_ROWS, DEFAULT_CAR_ROWS
+from ..const import (
+    DOMAIN, DEFAULT_UPDATE_INTERVAL, DEFAULT_VISITOR_ROWS, DEFAULT_CAR_ROWS,
+    CONF_UPDATE_INTERVAL, CONF_VISITOR_ROWS, CONF_CAR_ROWS,
+)
 from ..api.client import Client, LoginError, ApiError, ConnectionError
 
 _LOGGER = logging.getLogger(__name__)
 
 class CvnetCoordinator(DataUpdateCoordinator[dict]):
     def __init__(self, hass: HomeAssistant, entry) -> None:
+        interval = entry.options.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)
         super().__init__(
             hass,
             _LOGGER,
             name="cvnet",
-            update_interval=timedelta(seconds=DEFAULT_UPDATE_INTERVAL)
+            update_interval=timedelta(seconds=interval)
         )
         self.hass = hass
         self.entry = entry
@@ -27,11 +31,11 @@ class CvnetCoordinator(DataUpdateCoordinator[dict]):
         self._visitor_list = []
         self._selected = None
         # Visitor pagination
-        self._visitor_rows = DEFAULT_VISITOR_ROWS
+        self._visitor_rows = entry.options.get(CONF_VISITOR_ROWS, DEFAULT_VISITOR_ROWS)
         self._visitor_page_no = 1
         self._visitor_exist_next = False
         # Car entries state
-        self._car_rows = DEFAULT_CAR_ROWS
+        self._car_rows = entry.options.get(CONF_CAR_ROWS, DEFAULT_CAR_ROWS)
         self._car_page_no = 1
         self._car_exist_next = False
         self._car_contents = []
@@ -143,6 +147,19 @@ class CvnetCoordinator(DataUpdateCoordinator[dict]):
         except Exception as err:
             _LOGGER.warning("light status_snapshot error: %s", err)
 
+        # Refresh telemeter readings (electricity, water, gas)
+        telemeter_data = {}
+        try:
+            telemeter_data = await self.client.async_telemetering()
+            if telemeter_data:
+                _LOGGER.debug("Telemeter data updated successfully")
+            else:
+                _LOGGER.debug("Telemeter data returned empty")
+        except (ApiError, ConnectionError) as err:
+            _LOGGER.warning("telemetering failed during update: %s", err)
+        except Exception as err:
+            _LOGGER.warning("telemetering unexpected error: %s", err)
+
         # Only fail the entire update if both critical data sources fail
         if not visitor_success and not car_success:
             _LOGGER.error("Both visitor and car data updates failed - this may indicate session expiration or connectivity issues")
@@ -180,6 +197,7 @@ class CvnetCoordinator(DataUpdateCoordinator[dict]):
             },
             "heaters": heater_data,
             "lights": light_data,
+            "telemeter": telemeter_data,
         }
 
     # Visitor pagination controls
@@ -264,6 +282,15 @@ class CvnetCoordinator(DataUpdateCoordinator[dict]):
             import time
             info["last_successful_ago_hours"] = (time.time() - info["last_successful_request"]) / 3600
         return info
+
+    def apply_options(self, options: dict) -> None:
+        """Apply new options without recreating the coordinator."""
+        interval = options.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)
+        self.update_interval = timedelta(seconds=interval)
+        self._visitor_rows = options.get(CONF_VISITOR_ROWS, DEFAULT_VISITOR_ROWS)
+        self._car_rows = options.get(CONF_CAR_ROWS, DEFAULT_CAR_ROWS)
+        self._visitor_page_no = 1
+        self._car_page_no = 1
 
     async def async_close(self) -> None:
         try:

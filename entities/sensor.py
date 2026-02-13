@@ -1,5 +1,5 @@
 from __future__ import annotations
-from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
+from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
 from homeassistant.const import UnitOfEnergy, UnitOfVolume, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
@@ -28,9 +28,10 @@ class BaseEntity(SensorEntity):
     def __init__(self, coordinator: CvnetCoordinator):
         self.coordinator = coordinator
 
-class BaseTele(BaseEntity):
+class BaseTele(CoordinatorEntity, BaseEntity):
     def __init__(self, coordinator: CvnetCoordinator, name: str, key: str):
-        super().__init__(coordinator)
+        CoordinatorEntity.__init__(self, coordinator)
+        BaseEntity.__init__(self, coordinator)
         self._key = key
         self._attr_name = name
         self._attr_unique_id = f"cvnet_{key}"
@@ -48,6 +49,7 @@ class BaseTele(BaseEntity):
 class ElecSensor(BaseTele):
     _attr_device_class = SensorDeviceClass.ENERGY
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
     _attr_has_entity_name = True
     _attr_translation_key = "electricity"
     def __init__(self, coord): super().__init__(coord, "Electricity (kWh)", "electric")
@@ -55,6 +57,7 @@ class ElecSensor(BaseTele):
 class WaterSensor(BaseTele):
     _attr_device_class = SensorDeviceClass.WATER
     _attr_native_unit_of_measurement = UnitOfVolume.CUBIC_METERS
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
     _attr_has_entity_name = True
     _attr_translation_key = "water"
     def __init__(self, coord): super().__init__(coord, "Water (m³)", "water")
@@ -62,6 +65,7 @@ class WaterSensor(BaseTele):
 class GasSensor(BaseTele):
     _attr_device_class = SensorDeviceClass.GAS
     _attr_native_unit_of_measurement = UnitOfVolume.CUBIC_METERS
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
     _attr_has_entity_name = True
     _attr_translation_key = "gas"
     def __init__(self, coord): super().__init__(coord, "Gas (m³)", "gas")

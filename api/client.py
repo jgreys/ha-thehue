@@ -12,12 +12,15 @@ import random
 from ..const import (
     BASE,
     DEFAULT_TIMEOUT_S,
+    IMAGE_TIMEOUT_S,
     DEFAULT_WS_BASE,
     VISITOR_LIST_PATH,
     VISITOR_CONTENT_PATH,
     VISITOR_REFERER,
     ENTRANCECAR_LIST_PATH,
     ENTRANCECAR_REFERER,
+    TELEMETERING_LIST_PATH,
+    TELEMETERING_REFERER,
     SESSION_TIMEOUT_HOURS,
     ajax_headers,
     common_headers,
@@ -26,6 +29,13 @@ from ..const import (
 )
 
 DEFAULT_TIMEOUT = aiohttp.ClientTimeout(total=DEFAULT_TIMEOUT_S)
+IMAGE_TIMEOUT = aiohttp.ClientTimeout(total=IMAGE_TIMEOUT_S)
+
+# WebSocket backoff constants
+WS_BACKOFF_BASE = 1.0       # seconds
+WS_BACKOFF_MAX = 30.0       # seconds cap
+WS_BACKOFF_FACTOR = 2.0     # exponential factor
+WS_MAX_RETRIES = 4          # retry attempts for publish/status_snapshot
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -62,6 +72,7 @@ class Client:
         self._sockjs_session = None  # type: Optional[str]
         self._creds = None  # type: Optional[tuple]
         self._last_successful_request = None  # type: Optional[float]
+        self._ws_backoff_attempt = 0  # tracks consecutive WS failures
 
     # ---------- Auth / Priming ----------
     async def async_login(self, username: str, password: str) -> None:
@@ -198,7 +209,7 @@ class Client:
         
         async with self._session.post(url, headers=headers, data=payload, timeout=DEFAULT_TIMEOUT) as resp:
             if resp.status == 401:
-                _LOGGER.debug("Got 401, attempting re-authentication")
+                _LOGGER.info("Got 401, attempting re-authentication")
                 if await self._maybe_reauth():
                     return await self.async_visitor_list(page_no=page_no, rows=rows)
                 else:
@@ -237,7 +248,7 @@ class Client:
         _LOGGER.debug("entrancecar_list POST %s body=%s", url, payload)
         async with self._session.post(url, headers=headers, data=payload, timeout=DEFAULT_TIMEOUT) as resp:
             if resp.status == 401:
-                _LOGGER.debug("Got 401, attempting re-authentication")
+                _LOGGER.info("Got 401, attempting re-authentication")
                 if await self._maybe_reauth():
                     return await self.async_entrancecar_list(page_no=page_no, rows=rows)
                 else:
@@ -273,7 +284,7 @@ class Client:
         url = f"{BASE}{VISITOR_CONTENT_PATH}"
         _LOGGER.debug("visitor_content (b64) POST %s body=%s", url, payload)
         try:
-            async with self._session.post(url, headers=headers, data=payload, timeout=DEFAULT_TIMEOUT) as resp:
+            async with self._session.post(url, headers=headers, data=payload, timeout=IMAGE_TIMEOUT) as resp:
                 if resp.status == 401:
                     if await self._maybe_reauth():
                         return await self.async_visitor_image_b64(file_name)
@@ -305,7 +316,7 @@ class Client:
         payload = {"file_name": file_name}
         url = f"{BASE}{VISITOR_CONTENT_PATH}"
         _LOGGER.debug("visitor_content POST %s body=%s", url, payload)
-        async with self._session.post(url, headers=headers, data=payload, timeout=DEFAULT_TIMEOUT) as resp:
+        async with self._session.post(url, headers=headers, data=payload, timeout=IMAGE_TIMEOUT) as resp:
             if resp.status == 401:
                 if await self._maybe_reauth():
                     return await self.async_visitor_image_bytes(file_name)
@@ -395,6 +406,18 @@ class Client:
             pass
         return True
 
+    async def _ws_backoff_wait(self) -> None:
+        """Wait with exponential backoff + jitter before WS retry."""
+        delay = min(
+            WS_BACKOFF_BASE * (WS_BACKOFF_FACTOR ** self._ws_backoff_attempt),
+            WS_BACKOFF_MAX,
+        )
+        jitter = random.uniform(0, delay * 0.3)
+        total = delay + jitter
+        _LOGGER.debug("WS backoff: waiting %.1fs (attempt %d)", total, self._ws_backoff_attempt)
+        await asyncio.sleep(total)
+        self._ws_backoff_attempt += 1
+
     async def _ensure_ws(self, force_new: bool = False) -> aiohttp.ClientWebSocketResponse:
         """Ensure WebSocket connection is established and ready.
 
@@ -469,6 +492,7 @@ class Client:
             
         self._registered.clear()
         self._ws = ws
+        self._ws_backoff_attempt = 0
         return ws
 
     async def _ensure_registered(self, address: str) -> None:
@@ -499,15 +523,15 @@ class Client:
 
     async def async_publish(self, address: str, body: dict) -> dict:
         payload_text = self._build_publish_payload(str(address), body)
-        _LOGGER.warning("Publishing to address %s: %s", address, body)
+        _LOGGER.debug("Publishing to address %s: %s", address, body)
         last_err: Optional[Exception] = None
-        for attempt in range(2):
+        for attempt in range(WS_MAX_RETRIES):
             try:
                 await self._prime_cookies()
                 await self._ensure_ws(force_new=(attempt > 0))
                 await self._ensure_registered(str(address))
                 await self._ws.send_str(payload_text)
-                _LOGGER.warning("Publish sent on WS (attempt %s) - success", attempt + 1)
+                _LOGGER.debug("Publish sent on WS (attempt %s) - success", attempt + 1)
                 try:
                     msg = await self._ws.receive(timeout=1.0)
                     _LOGGER.debug("WS post-publish frame: type=%s data=%s", msg.type, getattr(msg, "data", None))
@@ -518,6 +542,7 @@ class Client:
                     _LOGGER.debug("XHR_SEND fallback also sent")
                 except Exception as e:
                     _LOGGER.debug("XHR_SEND fallback failed (ignored): %s", e)
+                self._ws_backoff_attempt = 0
                 return {}
             except (ServerDisconnectedError, ClientError, ApiError, asyncio.TimeoutError) as e:
                 _LOGGER.warning("Publish attempt %s failed: %s", attempt + 1, e)
@@ -528,14 +553,15 @@ class Client:
                     except Exception:
                         pass
                 self._ws = None
+                await self._ws_backoff_wait()
                 continue
-        _LOGGER.error("Publish failed after retries: %s", last_err)
+        _LOGGER.error("Publish failed after %d retries: %s", WS_MAX_RETRIES, last_err)
         raise ApiError(str(last_err) if last_err else "Publish failed")
 
     async def async_status_snapshot(self, address: str = "22") -> dict:
         payload_text = self._build_publish_payload(str(address), {"request": "status"})
 
-        for attempt in range(2):
+        for attempt in range(WS_MAX_RETRIES):
             try:
                 _LOGGER.debug("Sending status request for address %s (attempt %d)", address, attempt + 1)
                 # Always force new connection for status requests to avoid stale connections
@@ -561,7 +587,8 @@ class Client:
                                         data["body"] = json.loads(body)
                                     except Exception:
                                         pass
-                                _LOGGER.debug("Parsed heater data successfully")
+                                _LOGGER.debug("Parsed status data successfully for address %s", address)
+                                self._ws_backoff_attempt = 0
                                 return data
                             except Exception as ex:
                                 _LOGGER.debug("Failed to parse WS message: %s", ex)
@@ -570,6 +597,7 @@ class Client:
                         continue
                 # No valid response, try with new connection
                 _LOGGER.debug("No valid response, will retry with new connection")
+                await self._ws_backoff_wait()
 
             except Exception as e:
                 _LOGGER.debug("status_snapshot attempt %d failed: %s", attempt + 1, e)
@@ -580,12 +608,47 @@ class Client:
                     except Exception:
                         pass
                     self._ws = None
-                if attempt == 0:
-                    continue  # Retry with new connection
-                return {}
+                await self._ws_backoff_wait()
+                continue
 
-        _LOGGER.debug("status_snapshot: no valid response after retries")
+        _LOGGER.debug("status_snapshot: no valid response after %d retries", WS_MAX_RETRIES)
         return {}
+
+    async def async_telemetering(self) -> dict:
+        """Fetch current telemetering data (electricity, water, gas)."""
+        await self._ensure_authenticated()
+
+        # Prime the telemetering page
+        try:
+            url = f"{BASE}{TELEMETERING_REFERER}"
+            async with self._session.get(url, headers=common_headers(), timeout=DEFAULT_TIMEOUT) as r:
+                _LOGGER.debug("Prime telemetering GET %s -> %s", url, r.status)
+        except Exception as e:
+            _LOGGER.debug("Prime telemetering failed: %s", e)
+
+        headers = dict(ajax_headers())
+        headers["Content-Type"] = "application/x-www-form-urlencoded; charset=UTF-8"
+        headers["Referer"] = f"{BASE}{TELEMETERING_REFERER}"
+
+        url = f"{BASE}{TELEMETERING_LIST_PATH}"
+        _LOGGER.debug("telemetering POST %s", url)
+
+        async with self._session.post(url, headers=headers, data={}, timeout=DEFAULT_TIMEOUT) as resp:
+            if resp.status == 401:
+                _LOGGER.info("Got 401 on telemetering, attempting re-authentication")
+                if await self._maybe_reauth():
+                    return await self.async_telemetering()
+                raise ApiError("Telemetering authentication failed after retry")
+            txt = await resp.text()
+            if resp.status != 200:
+                raise ApiError(f"telemetering HTTP {resp.status}: {txt[:160]}")
+            try:
+                data = json.loads(txt)
+                self._mark_successful_request()
+            except Exception as ex:
+                _LOGGER.error("telemetering invalid JSON: %s", ex)
+                return {}
+            return data if isinstance(data, dict) else {}
 
     async def async_close(self):
         if self._ws and not self._ws.closed:

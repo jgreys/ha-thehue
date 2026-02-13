@@ -5,11 +5,17 @@ DOMAIN = "cvnet"
 # Base URLs and defaults
 BASE = "https://js-thehue.uasis.com"
 DEFAULT_TIMEOUT_S = 10  # seconds
+IMAGE_TIMEOUT_S = 30  # seconds, for potentially large visitor image fetches
 DEFAULT_UPDATE_INTERVAL = 15  # seconds
 DEFAULT_VISITOR_ROWS = 5
 DEFAULT_CAR_ROWS = 5
 MAX_VISITOR_ATTRIBUTES = 8  # Limit for state attributes to avoid 16KB cap
 SESSION_TIMEOUT_HOURS = 24  # Consider session expired after this many hours
+
+# Options flow keys
+CONF_UPDATE_INTERVAL = "update_interval"
+CONF_VISITOR_ROWS = "visitor_rows"
+CONF_CAR_ROWS = "car_rows"
 
 # User agent string
 UA = (
@@ -25,6 +31,10 @@ VISITOR_REFERER = "/cvnet/web/absence_visitor.view"
 # Car entries (entrance) paths
 ENTRANCECAR_LIST_PATH = "/cvnet/web/entrancecar_list.do"
 ENTRANCECAR_REFERER = "/cvnet/web/enter_car.view"
+
+# Telemetering paths
+TELEMETERING_LIST_PATH = "/cvnet/web/telemetering_list.do"
+TELEMETERING_REFERER = "/cvnet/web/telemetering.view"
 
 # WebSocket/SockJS
 DEFAULT_WS_BASE = "wss://js-thehue.uasis.com:9099/devicecontrol"

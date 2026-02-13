@@ -31,7 +31,9 @@
       "init": {
         "title": "한신더휴 CVNET 옵션",
         "data": {
-          "notify_service": "알림 서비스"
+          "update_interval": "업데이트 간격 (초)",
+          "visitor_rows": "페이지당 방문자 행 수",
+          "car_rows": "페이지당 차량 출입 행 수"
         }
       }
     }
