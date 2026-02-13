@@ -12,7 +12,7 @@ from .core.coordinator import CvnetCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = ["climate", "camera", "select", "light", "sensor", "button"]
+PLATFORMS = ["climate", "camera", "select", "light", "sensor", "button", "binary_sensor"]
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up CVNET from a config entry."""

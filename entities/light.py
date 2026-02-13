@@ -2,10 +2,11 @@ from __future__ import annotations
 import logging
 from typing import Any, List
 from homeassistant.components.light import LightEntity, ColorMode
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from ..const import DOMAIN
 from ..core.coordinator import CvnetCoordinator
 
@@ -27,12 +28,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     entities = [CvnetLight(coord, l) for l in lights]
     async_add_entities(entities, update_before_add=False)
 
-class CvnetLight(LightEntity):
+
+class CvnetLight(CoordinatorEntity, LightEntity):
+    """Light entity that syncs state from coordinator."""
+
     _attr_supported_color_modes = {ColorMode.ONOFF}
     _attr_color_mode = ColorMode.ONOFF
 
     def __init__(self, coordinator: CvnetCoordinator, li: dict):
-        self.coordinator = coordinator
+        super().__init__(coordinator)
         self._name = li["name"]
         self._number = str(li["number"])
         self._is_on = False
@@ -46,6 +50,24 @@ class CvnetLight(LightEntity):
     @property
     def is_on(self) -> bool:
         return self._is_on
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        lights_data = (self.coordinator.data or {}).get("lights", {})
+        body = lights_data.get("body", {})
+        contents = body.get("contents", [])
+
+        # Parse light state from coordinator data
+        # contents is a list of light states: [{"number": "2", "onoff": "1", ...}, ...]
+        for light in contents:
+            if str(light.get("number")) == self._number:
+                onoff = str(light.get("onoff", "0"))
+                self._is_on = onoff == "1"
+                _LOGGER.debug("Light %s state updated from coordinator: %s", self._number, self._is_on)
+                break
+
+        self.async_write_ha_state()
 
     async def async_turn_on(self, **kwargs: Any):
         username = getattr(self.coordinator.client, "_username", "homeassistant")
