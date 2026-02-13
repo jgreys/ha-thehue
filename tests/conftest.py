@@ -149,6 +149,9 @@ ha_components_binary_sensor = _make_module("homeassistant.components.binary_sens
     "BinarySensorEntity": _FakeEntity,
     "BinarySensorDeviceClass": MagicMock(CONNECTIVITY="connectivity"),
 })
+ha_components_persistent_notification = _make_module("homeassistant.components.persistent_notification", ha_components, {
+    "async_create": MagicMock(),
+})
 
 # voluptuous stub
 if "voluptuous" not in sys.modules:

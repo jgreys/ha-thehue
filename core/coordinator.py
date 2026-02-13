@@ -7,6 +7,7 @@ from homeassistant.const import CONF_USERNAME, CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.components.persistent_notification import async_create as pn_async_create
 
 from ..const import (
     DOMAIN, DEFAULT_UPDATE_INTERVAL, DEFAULT_VISITOR_ROWS, DEFAULT_CAR_ROWS,
@@ -321,14 +322,11 @@ class CvnetCoordinator(DataUpdateCoordinator[dict]):
                         "title": visitor_data.get("title"),
                     })
                     # Create persistent notification
-                    await self.hass.services.async_call(
-                        "persistent_notification",
-                        "create",
-                        {
-                            "title": "New Visitor",
-                            "message": f"Visitor at {visitor_data.get('date_time', 'unknown time')}",
-                            "notification_id": f"cvnet_visitor_{file_name}",
-                        },
+                    pn_async_create(
+                        self.hass,
+                        f"Visitor at {visitor_data.get('date_time', 'unknown time')}",
+                        title="New Visitor",
+                        notification_id=f"cvnet_visitor_{file_name}",
                     )
 
         self._seen_visitors = current
@@ -363,14 +361,11 @@ class CvnetCoordinator(DataUpdateCoordinator[dict]):
                         "direction": inout,
                     })
                     # Create persistent notification
-                    await self.hass.services.async_call(
-                        "persistent_notification",
-                        "create",
-                        {
-                            "title": f"Car {inout.title()}",
-                            "message": f"{plate} {inout} at {date_time}",
-                            "notification_id": f"cvnet_car_{car_key.replace(' ', '_')}",
-                        },
+                    pn_async_create(
+                        self.hass,
+                        f"{plate} {inout} at {date_time}",
+                        title=f"Car {inout.title()}",
+                        notification_id=f"cvnet_car_{car_key.replace(' ', '_')}",
                     )
 
         self._seen_cars = current
