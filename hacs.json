@@ -3,5 +3,6 @@
   "hacs": "1.6.0",
   "domains": ["climate", "camera", "select", "light", "sensor", "button", "switch", "binary_sensor"],
   "iot_class": "Cloud Polling",
-  "homeassistant": "2023.1.0"
+  "homeassistant": "2023.1.0",
+  "content_in_root": true
 }
