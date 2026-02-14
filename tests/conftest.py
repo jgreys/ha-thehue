@@ -169,7 +169,10 @@ if "voluptuous" not in sys.modules:
 # We register it as a package so `from <pkg>.api.client import Client` works.
 # ---------------------------------------------------------------------------
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PROJECT_ROOT = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "custom_components", "cvnet"
+)
 PACKAGE_NAME = "cvnet"  # canonical name for the integration
 
 # Register the project root as a package named "cvnet"
