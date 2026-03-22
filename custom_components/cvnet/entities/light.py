@@ -12,19 +12,25 @@ from ..core.coordinator import CvnetCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
+FALLBACK_LIGHTS = [{"name": "거실2", "number": "2"}, {"name": "거실3", "number": "3"}]
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback):
     coord: CvnetCoordinator = hass.data[DOMAIN][entry.entry_id]
     lights: List[dict] = []
-    devs = (coord.data or {}).get("devices") or {}
-    for item in devs.get("contents", []):
-        try:
-            num = str(item.get("number"))
-            title = item.get("title") or f"Light {num}"
-            lights.append({"name": title, "number": num})
-        except Exception:
-            continue
+    # Try to discover lights from the coordinator's light status data
+    light_data = (coord.data or {}).get("lights") or {}
+    body = light_data.get("body") if isinstance(light_data, dict) else None
+    if isinstance(body, dict):
+        for item in body.get("contents", []):
+            try:
+                num = str(item.get("number"))
+                title = item.get("title") or f"Light {num}"
+                lights.append({"name": title, "number": num})
+            except Exception:
+                continue
     if not lights:
-        lights = [{"name":"거실2","number":"2"},{"name":"거실3","number":"3"}]
+        lights = FALLBACK_LIGHTS
     entities = [CvnetLight(coord, l) for l in lights]
     async_add_entities(entities, update_before_add=False)
 
@@ -56,29 +62,21 @@ class CvnetLight(CoordinatorEntity, LightEntity):
         """Handle updated data from the coordinator."""
         lights_data = (self.coordinator.data or {}).get("lights", {})
         body = lights_data.get("body", {})
-        contents = body.get("contents", [])
-
-        # Parse light state from coordinator data
-        # contents is a list of light states: [{"number": "2", "onoff": "1", ...}, ...]
-        for light in contents:
+        for light in body.get("contents", []):
             if str(light.get("number")) == self._number:
-                onoff = str(light.get("onoff", "0"))
-                self._is_on = onoff == "1"
-                _LOGGER.debug("Light %s state updated from coordinator: %s", self._number, self._is_on)
+                self._is_on = str(light.get("onoff", "0")) == "1"
                 break
 
         self.async_write_ha_state()
 
-    async def async_turn_on(self, **kwargs: Any):
-        username = getattr(self.coordinator.client, "_username", "homeassistant")
-        body = {"id": username, "remote_addr": "127.0.0.1", "request": "control", "number": self._number, "onoff": "1", "brightness": "0", "zone": "1"}
+    async def _async_set_light(self, onoff: str) -> None:
+        body = {"request": "control", "number": self._number, "onoff": onoff, "brightness": "0", "zone": "1"}
         await self.coordinator.client.async_publish(address="18", body=body)
-        self._is_on = True
+        self._is_on = onoff == "1"
         self.async_write_ha_state()
 
+    async def async_turn_on(self, **kwargs: Any):
+        await self._async_set_light("1")
+
     async def async_turn_off(self, **kwargs: Any):
-        username = getattr(self.coordinator.client, "_username", "homeassistant")
-        body = {"id": username, "remote_addr": "127.0.0.1", "request": "control", "number": self._number, "onoff": "0", "brightness": "0", "zone": "1"}
-        await self.coordinator.client.async_publish(address="18", body=body)
-        self._is_on = False
-        self.async_write_ha_state()
+        await self._async_set_light("0")

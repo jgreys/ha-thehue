@@ -13,6 +13,7 @@ from ..core.coordinator import CvnetCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     coord: CvnetCoordinator = hass.data[DOMAIN][entry.entry_id]
     async_add_entities([
@@ -24,89 +25,69 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         CvnetHeatingAllOnButton(coord, entry),
         CvnetHeatingAllOffButton(coord, entry),
     ], update_before_add=False)
-class _BaseVisitorButton(ButtonEntity):
-    def __init__(self, coordinator: CvnetCoordinator, entry: ConfigEntry, name: str, uid: str) -> None:
+
+
+class _BaseButton(ButtonEntity):
+    def __init__(self, coordinator: CvnetCoordinator, entry: ConfigEntry, name: str, uid: str, device_info: DeviceInfo) -> None:
         self.coordinator = coordinator
         self._entry = entry
         self._attr_name = name
         self._attr_unique_id = f"{entry.entry_id}_{uid}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, "cvnet_visitors")},
-            name="Visitors",
-            manufacturer="CVNET",
-        )
+        self._attr_device_info = device_info
 
-class CvnetVisitorPrevPageButton(_BaseVisitorButton):
+
+class CvnetVisitorPrevPageButton(_BaseButton):
     _attr_icon = "mdi:page-previous"
 
     def __init__(self, coordinator: CvnetCoordinator, entry: ConfigEntry) -> None:
-        super().__init__(coordinator, entry, "Visitor Prev Page", "visitor_prev")
+        super().__init__(coordinator, entry, "Visitor Prev Page", "visitor_prev",
+                         DeviceInfo(identifiers={(DOMAIN, "cvnet_visitors")}, name="Visitors", manufacturer="CVNET"))
 
     async def async_press(self) -> None:
         await self.coordinator.async_visitor_prev_page()
 
-class CvnetVisitorNextPageButton(_BaseVisitorButton):
+
+class CvnetVisitorNextPageButton(_BaseButton):
     _attr_icon = "mdi:page-next"
 
     def __init__(self, coordinator: CvnetCoordinator, entry: ConfigEntry) -> None:
-        super().__init__(coordinator, entry, "Visitor Next Page", "visitor_next")
+        super().__init__(coordinator, entry, "Visitor Next Page", "visitor_next",
+                         DeviceInfo(identifiers={(DOMAIN, "cvnet_visitors")}, name="Visitors", manufacturer="CVNET"))
 
     async def async_press(self) -> None:
         await self.coordinator.async_visitor_next_page()
 
-class _BaseCarButton(ButtonEntity):
-    def __init__(self, coordinator: CvnetCoordinator, entry: ConfigEntry, name: str, uid: str) -> None:
-        self.coordinator = coordinator
-        self._entry = entry
-        self._attr_name = name
-        self._attr_unique_id = f"{entry.entry_id}_{uid}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{entry.entry_id}_car")},
-            name="Car Entrance",
-            manufacturer="CVNET",
-        )
 
-class CvnetCarPrevPageButton(_BaseCarButton):
+class CvnetCarPrevPageButton(_BaseButton):
     _attr_icon = "mdi:page-previous"
 
     def __init__(self, coordinator: CvnetCoordinator, entry: ConfigEntry) -> None:
-        super().__init__(coordinator, entry, "Car Prev Page", "car_prev")
+        super().__init__(coordinator, entry, "Car Prev Page", "car_prev",
+                         DeviceInfo(identifiers={(DOMAIN, f"{entry.entry_id}_car")}, name="Car Entrance", manufacturer="CVNET"))
 
     async def async_press(self) -> None:
         await self.coordinator.async_car_prev_page()
 
-class CvnetCarNextPageButton(_BaseCarButton):
+
+class CvnetCarNextPageButton(_BaseButton):
     _attr_icon = "mdi:page-next"
 
     def __init__(self, coordinator: CvnetCoordinator, entry: ConfigEntry) -> None:
-        super().__init__(coordinator, entry, "Car Next Page", "car_next")
+        super().__init__(coordinator, entry, "Car Next Page", "car_next",
+                         DeviceInfo(identifiers={(DOMAIN, f"{entry.entry_id}_car")}, name="Car Entrance", manufacturer="CVNET"))
 
     async def async_press(self) -> None:
         await self.coordinator.async_car_next_page()
 
 
-class _BaseSystemButton(ButtonEntity):
-    """Base class for system-level buttons (gas valve, heating controls)."""
-
-    def __init__(self, coordinator: CvnetCoordinator, entry: ConfigEntry, name: str, uid: str) -> None:
-        self.coordinator = coordinator
-        self._entry = entry
-        self._attr_name = name
-        self._attr_unique_id = f"{entry.entry_id}_{uid}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{entry.entry_id}_system")},
-            name="CVNET System",
-            manufacturer="CVNET",
-        )
-
-
-class CvnetGasValveCloseButton(_BaseSystemButton):
+class CvnetGasValveCloseButton(_BaseButton):
     """Button to close the gas valve. Opening requires physical access for safety."""
 
     _attr_icon = "mdi:valve-closed"
 
     def __init__(self, coordinator: CvnetCoordinator, entry: ConfigEntry) -> None:
-        super().__init__(coordinator, entry, "Close Gas Valve", "gas_valve_close")
+        super().__init__(coordinator, entry, "Close Gas Valve", "gas_valve_close",
+                         DeviceInfo(identifiers={(DOMAIN, f"{entry.entry_id}_system")}, name="CVNET System", manufacturer="CVNET"))
 
     async def async_press(self) -> None:
         body = {"request": "control", "number": "1", "onoff": "0"}
@@ -114,13 +95,14 @@ class CvnetGasValveCloseButton(_BaseSystemButton):
         _LOGGER.info("Gas valve CLOSE command sent")
 
 
-class CvnetHeatingAllOnButton(_BaseSystemButton):
+class CvnetHeatingAllOnButton(_BaseButton):
     """Button to turn all heating zones ON."""
 
     _attr_icon = "mdi:radiator"
 
     def __init__(self, coordinator: CvnetCoordinator, entry: ConfigEntry) -> None:
-        super().__init__(coordinator, entry, "Heating All ON", "heating_all_on")
+        super().__init__(coordinator, entry, "Heating All ON", "heating_all_on",
+                         DeviceInfo(identifiers={(DOMAIN, f"{entry.entry_id}_system")}, name="CVNET System", manufacturer="CVNET"))
 
     async def async_press(self) -> None:
         body = {"request": "control_all", "onoff": "1"}
@@ -129,13 +111,14 @@ class CvnetHeatingAllOnButton(_BaseSystemButton):
         await self.coordinator.async_request_refresh()
 
 
-class CvnetHeatingAllOffButton(_BaseSystemButton):
+class CvnetHeatingAllOffButton(_BaseButton):
     """Button to turn all heating zones OFF."""
 
     _attr_icon = "mdi:radiator-off"
 
     def __init__(self, coordinator: CvnetCoordinator, entry: ConfigEntry) -> None:
-        super().__init__(coordinator, entry, "Heating All OFF", "heating_all_off")
+        super().__init__(coordinator, entry, "Heating All OFF", "heating_all_off",
+                         DeviceInfo(identifiers={(DOMAIN, f"{entry.entry_id}_system")}, name="CVNET System", manufacturer="CVNET"))
 
     async def async_press(self) -> None:
         body = {"request": "control_all", "onoff": "0"}

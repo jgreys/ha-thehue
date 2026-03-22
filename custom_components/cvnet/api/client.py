@@ -160,6 +160,21 @@ class Client:
         """Force re-authentication on next request."""
         self._last_successful_request = None
 
+    @property
+    def is_connected(self) -> bool:
+        """Whether the WebSocket connection is healthy."""
+        return self._is_ws_healthy()
+
+    @property
+    def has_credentials(self) -> bool:
+        """Whether login credentials are available."""
+        return bool(self._creds)
+
+    @property
+    def is_session_expired(self) -> bool:
+        """Whether the session appears expired."""
+        return self._is_session_expired()
+
     # ---------- Basic REST endpoints ----------
     async def async_device_info(self, type_hex: str = "0x12") -> Dict[str, Any]:
         _LOGGER.debug("POST device_info.do type=%s", type_hex)

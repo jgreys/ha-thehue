@@ -25,6 +25,7 @@ def coordinator(mock_hass, mock_entry):
     })
     coord.client.async_status_snapshot = AsyncMock(return_value={})
     coord.client.async_telemetering = AsyncMock(return_value={})
+    coord.client.has_credentials = True
     coord.client._creds = ("testuser", "testpass")
     coord.async_request_refresh = AsyncMock()
     return coord
@@ -208,11 +209,11 @@ class TestNewCarDetection:
 
 class TestSessionInfo:
     def test_get_session_info(self, coordinator):
-        coordinator.client._creds = ("testuser", "testpass")
-        coordinator.client._username = "testuser"
+        coordinator.client.has_credentials = True
+        coordinator.client.is_connected = False
+        coordinator.client.is_session_expired = True
         coordinator.client._last_successful_request = None
-        coordinator.client._is_session_expired = lambda: True
         info = coordinator.get_session_info()
         assert info["has_credentials"] is True
-        assert info["username"] == "testuser"
+        assert info["is_connected"] is False
         assert info["session_expired"] is True

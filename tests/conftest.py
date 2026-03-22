@@ -213,9 +213,14 @@ for mod_name, rel_path in [
     full_path = os.path.join(PROJECT_ROOT, rel_path)
     mod_spec = importlib.util.spec_from_file_location(mod_name, full_path)
     mod = importlib.util.module_from_spec(mod_spec)
-    mod.__package__ = mod_name.rsplit(".", 1)[0]
+    parent_name = mod_name.rsplit(".", 1)[0]
+    mod.__package__ = parent_name
     sys.modules[mod_name] = mod
     mod_spec.loader.exec_module(mod)
+    # Link the module as an attribute of its parent package
+    if parent_name in sys.modules:
+        attr_name = mod_name.rsplit(".", 1)[1]
+        setattr(sys.modules[parent_name], attr_name, mod)
 
 # ---------------------------------------------------------------------------
 # Fixtures

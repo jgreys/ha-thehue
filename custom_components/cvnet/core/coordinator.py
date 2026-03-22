@@ -1,5 +1,6 @@
 from __future__ import annotations
 import logging
+import time
 from datetime import timedelta
 from typing import Any, Dict, List, Optional
 
@@ -68,7 +69,7 @@ class CvnetCoordinator(DataUpdateCoordinator[dict]):
         if not username or not password:
             raise UpdateFailed("Missing credentials in config entry")
 
-        if not getattr(self.client, "_creds", None):
+        if not self.client.has_credentials:
             try:
                 await self.client.async_login(username, password)
                 _LOGGER.debug("Initial login successful")
@@ -259,15 +260,14 @@ class CvnetCoordinator(DataUpdateCoordinator[dict]):
 
     def get_session_info(self) -> dict:
         """Get diagnostic information about the current session."""
+        last_req = getattr(self.client, "_last_successful_request", None)
         info = {
-            "has_credentials": bool(getattr(self.client, "_creds", None)),
-            "username": getattr(self.client, "_username", None),
-            "last_successful_request": getattr(self.client, "_last_successful_request", None),
-            "session_expired": getattr(self.client, "_is_session_expired", lambda: None)() if hasattr(self.client, "_is_session_expired") else None,
+            "has_credentials": self.client.has_credentials,
+            "is_connected": self.client.is_connected,
+            "session_expired": self.client.is_session_expired,
         }
-        if info["last_successful_request"]:
-            import time
-            info["last_successful_ago_hours"] = (time.time() - info["last_successful_request"]) / 3600
+        if last_req:
+            info["last_successful_ago_hours"] = (time.time() - last_req) / 3600
         return info
 
     def apply_options(self, options: dict) -> None:
@@ -319,22 +319,17 @@ class CvnetCoordinator(DataUpdateCoordinator[dict]):
 
     async def _check_new_car_entries(self) -> None:
         """Check for new car entries and fire events/notifications."""
-        # Create unique key from title + datetime
-        current = {
-            f"{c.get('title')}_{c.get('date_time')}"
-            for c in self._car_contents
-            if c.get("title") and c.get("date_time")
-        }
+        current_map = {}
+        for c in self._car_contents:
+            title, dt = c.get("title"), c.get("date_time")
+            if title and dt:
+                current_map[f"{title}_{dt}"] = c
+        current = set(current_map)
 
         if not self._first_run:
             new_cars = current - self._seen_cars
             for car_key in new_cars:
-                # Find car data
-                car_data = next(
-                    (c for c in self._car_contents
-                     if f"{c.get('title')}_{c.get('date_time')}" == car_key),
-                    None
-                )
+                car_data = current_map.get(car_key)
                 if car_data:
                     inout = "entered" if car_data.get("inout") == "0" else "exited"
                     plate = car_data.get("title")

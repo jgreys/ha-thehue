@@ -47,14 +47,14 @@ class CvnetConnectionStatusSensor(CoordinatorEntity, BinarySensorEntity):
     @property
     def is_on(self) -> bool:
         """Return True if WebSocket connection is healthy."""
-        return self.coordinator.client._is_ws_healthy()
+        return self.coordinator.client.is_connected
 
     @property
     def extra_state_attributes(self) -> dict:
         """Return additional connection info."""
         client = self.coordinator.client
         return {
-            "has_credentials": bool(getattr(client, "_creds", None)),
-            "session_expired": client._is_session_expired() if hasattr(client, "_is_session_expired") else None,
-            "websocket_connected": self.coordinator.client._is_ws_healthy(),
+            "has_credentials": client.has_credentials,
+            "session_expired": client.is_session_expired,
+            "websocket_connected": self.is_on,
         }
