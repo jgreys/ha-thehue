@@ -3,6 +3,7 @@ import json
 import base64
 import logging
 import asyncio
+import time
 from typing import Any, Dict, Optional
 import aiohttp
 from aiohttp import ClientError, ServerDisconnectedError, WSMsgType
@@ -120,7 +121,6 @@ class Client:
             _LOGGER.debug("device_info after login failed (ignored): %s", e)
         
         # Mark successful login
-        import time
         self._last_successful_request = time.time()
 
     async def _prime_cookies(self) -> None:
@@ -139,9 +139,7 @@ class Client:
         if not self._last_successful_request:
             return True
         
-        import time
-        # Consider session expired after configured hours of no successful requests
-        SESSION_TIMEOUT = SESSION_TIMEOUT_HOURS * 60 * 60  # Convert hours to seconds
+        SESSION_TIMEOUT = SESSION_TIMEOUT_HOURS * 60 * 60
         return (time.time() - self._last_successful_request) > SESSION_TIMEOUT
 
     async def _ensure_authenticated(self) -> None:
@@ -156,8 +154,11 @@ class Client:
 
     def _mark_successful_request(self) -> None:
         """Mark that we just had a successful request."""
-        import time
         self._last_successful_request = time.time()
+
+    def invalidate_session(self) -> None:
+        """Force re-authentication on next request."""
+        self._last_successful_request = None
 
     # ---------- Basic REST endpoints ----------
     async def async_device_info(self, type_hex: str = "0x12") -> Dict[str, Any]:
@@ -355,7 +356,6 @@ class Client:
         return json.dumps([json.dumps(obj, separators=(",", ":"), ensure_ascii=False)], separators=(",", ":"), ensure_ascii=False)
 
     def _build_publish_payload(self, address: str, body: Dict[str, Any]) -> str:
-        # Use username as id (matches what the website uses), fall back to dev_id
         inner_body = {
             "id": body.get("id", self._username or self._dev_id or "homeassistant"),
             "remote_addr": body.get("remote_addr", self._remote_addr or "127.0.0.1"),
@@ -381,9 +381,7 @@ class Client:
         return payload
 
     def _build_login_payload(self) -> str:
-        # Use username (matches what the website uses), fall back to dev_id
         username = self._username or self._dev_id or "homeassistant"
-        # Use actual password from credentials instead of hardcoded value
         password = self._creds[1] if self._creds and len(self._creds) > 1 else "cvnet"
         envelope = {"type": "send", "address": "vertx.basicauthmanager.login", "body": {"username": username, "password": password}}
         payload = self._outer_array_of(envelope)
@@ -531,7 +529,7 @@ class Client:
                 await self._ensure_ws(force_new=(attempt > 0))
                 await self._ensure_registered(str(address))
                 await self._ws.send_str(payload_text)
-                _LOGGER.debug("Publish sent on WS (attempt %s) - success", attempt + 1)
+                _LOGGER.debug("Publish sent on WS (attempt %s)", attempt + 1)
                 try:
                     msg = await self._ws.receive(timeout=1.0)
                     _LOGGER.debug("WS post-publish frame: type=%s data=%s", msg.type, getattr(msg, "data", None))

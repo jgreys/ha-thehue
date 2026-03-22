@@ -7,8 +7,6 @@ import time
 from typing import Any, Optional
 
 from homeassistant.components.climate import ClimateEntity
-
-_LOGGER = logging.getLogger(__name__)
 from homeassistant.components.climate.const import HVACMode, ClimateEntityFeature
 from homeassistant.const import UnitOfTemperature, ATTR_TEMPERATURE
 from homeassistant.core import HomeAssistant
@@ -18,6 +16,8 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from ..const import DOMAIN
 from ..core.coordinator import CvnetCoordinator
+
+_LOGGER = logging.getLogger(__name__)
 
 ROOMS = [
     {"name": "거실 난방", "number": "1", "off_special": True},
@@ -86,11 +86,9 @@ class CVNETClimate(CoordinatorEntity, ClimateEntity):
             try:
                 _LOGGER.debug("Setting HVAC mode %s for room %s: %s", hvac_mode, self._number, body)
                 await publish(address="22", body=body)
-                # Update local state immediately (optimistic) and track command time
                 self._attr_hvac_mode = hvac_mode
                 self._last_command_time = time.monotonic()
                 self.async_write_ha_state()
-                # Schedule debounced refresh
                 self._schedule_debounced_refresh()
             except Exception as ex:
                 _LOGGER.error("Failed to set HVAC mode for room %s: %s", self._number, ex)
@@ -115,11 +113,9 @@ class CVNETClimate(CoordinatorEntity, ClimateEntity):
             try:
                 _LOGGER.debug("Setting temperature %s for room %s: %s", t, self._number, body)
                 await publish(address="22", body=body)
-                # Update local state immediately (optimistic) and track command time
                 self._attr_target_temperature = float(t)
                 self._last_command_time = time.monotonic()
                 self.async_write_ha_state()
-                # Schedule debounced refresh - cancel any pending refresh first
                 self._schedule_debounced_refresh()
             except Exception as ex:
                 _LOGGER.error("Failed to set temperature for room %s: %s", self._number, ex)
@@ -129,11 +125,9 @@ class CVNETClimate(CoordinatorEntity, ClimateEntity):
             self.async_write_ha_state()
 
     def _schedule_debounced_refresh(self) -> None:
-        """Schedule a coordinator refresh after debounce delay, canceling any pending refresh."""
-        # Cancel any existing pending refresh
+        """Schedule a coordinator refresh after debounce delay, canceling any pending one."""
         if self._pending_refresh_task and not self._pending_refresh_task.done():
             self._pending_refresh_task.cancel()
-        # Schedule new refresh after delay
         self._pending_refresh_task = asyncio.create_task(self._delayed_refresh())
 
     async def _delayed_refresh(self) -> None:
@@ -154,45 +148,35 @@ class CVNETClimate(CoordinatorEntity, ClimateEntity):
         if isinstance(body, dict):
             for item in body.get("contents", []):
                 if str(item.get("number")) == self._number:
-                    # Parse current_temp, handling both int and string values
                     ct = item.get("current_temp")
                     if ct is not None:
                         try:
                             self._attr_current_temperature = float(ct)
                         except (ValueError, TypeError):
                             pass
-                    # Parse onoff - but respect debounce window to avoid race conditions
                     onoff = item.get("onoff")
                     server_hvac_mode = HVACMode.HEAT if str(onoff) == "1" else HVACMode.OFF
                     time_since_command = time.monotonic() - self._last_command_time
                     if time_since_command > COMMAND_DEBOUNCE_SECONDS:
-                        # Safe to update from server - no recent commands
                         self._attr_hvac_mode = server_hvac_mode
                     elif server_hvac_mode == self._attr_hvac_mode:
-                        # Server confirms our optimistic update
                         _LOGGER.debug("Server confirmed HVAC mode %s for room %s", server_hvac_mode, self._number)
                     else:
-                        # Within debounce window and server disagrees - keep optimistic value
-                        _LOGGER.warning(
+                        _LOGGER.debug(
                             "Ignoring stale server HVAC mode %s for room %s (local: %s, %.1fs since command)",
                             server_hvac_mode, self._number, self._attr_hvac_mode, time_since_command
                         )
-                    # Parse setting_temp - reuse time_since_command from above
                     st = item.get("setting_temp")
                     if st is not None:
                         server_temp = float(_clamp_int_temp(st))
                         if time_since_command > COMMAND_DEBOUNCE_SECONDS:
-                            # Safe to update from server - no recent commands
                             self._attr_target_temperature = server_temp
                         elif server_temp == self._attr_target_temperature:
-                            # Server confirms our optimistic update
                             _LOGGER.debug("Server confirmed temp %s for room %s", server_temp, self._number)
                         else:
-                            # Within debounce window and server disagrees - keep optimistic value
-                            _LOGGER.warning(
+                            _LOGGER.debug(
                                 "Ignoring stale server temp %s for room %s (local: %s, %.1fs since command)",
                                 server_temp, self._number, self._attr_target_temperature, time_since_command
                             )
                     break
-        # Call parent to write state
         super()._handle_coordinator_update()

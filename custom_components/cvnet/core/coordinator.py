@@ -63,13 +63,11 @@ class CvnetCoordinator(DataUpdateCoordinator[dict]):
         Raises:
             UpdateFailed: If critical data update fails
         """
-        # Ensure credentials are available
         username = self.entry.data.get(CONF_USERNAME)
         password = self.entry.data.get(CONF_PASSWORD)
         if not username or not password:
             raise UpdateFailed("Missing credentials in config entry")
 
-        # Ensure client has credentials for re-authentication
         if not getattr(self.client, "_creds", None):
             try:
                 await self.client.async_login(username, password)
@@ -84,27 +82,22 @@ class CvnetCoordinator(DataUpdateCoordinator[dict]):
         visitor_success = False
         car_success = False
 
-        # Refresh visitors periodically
         try:
             data = await self.client.async_visitor_list(page_no=self._visitor_page_no, rows=self._visitor_rows)
             self._visitor_list = data or []
             if self._visitor_list and (self._selected is None or self._selected not in [i.get("file_name") for i in self._visitor_list]):
                 self._selected = self._visitor_list[0].get("file_name")
-            # Visitor pagination: check if next page exists
             self._visitor_exist_next = len(self._visitor_list) >= self._visitor_rows
             visitor_success = True
             _LOGGER.debug("Visitor list updated successfully: %d items", len(self._visitor_list))
         except (ApiError, ConnectionError) as err:
             _LOGGER.warning("visitor_list failed during update: %s", err)
-            # Keep existing data but mark as failed
         except Exception as err:
             _LOGGER.error("Unexpected error during visitor_list update: %s", err)
 
-        # Refresh car entries with current pagination
         try:
             car = await self.client.async_entrancecar_list(page_no=self._car_page_no, rows=self._car_rows)
             self._car_contents = car.get("contents", [])
-            # Normalize numbers
             try:
                 self._car_page_no = int(str(car.get("page_no") or self._car_page_no).lstrip("0") or "1")
             except (ValueError, TypeError):
@@ -118,16 +111,14 @@ class CvnetCoordinator(DataUpdateCoordinator[dict]):
             _LOGGER.debug("Car entries updated successfully: %d items", len(self._car_contents))
         except (ApiError, ConnectionError) as err:
             _LOGGER.warning("entrancecar_list failed during update: %s", err)
-            # Keep existing data but mark as failed
         except Exception as err:
             _LOGGER.error("Unexpected error during entrancecar_list update: %s", err)
 
-        # Refresh heater status via websocket
         heater_data = {}
         try:
             heater_data = await self.client.async_status_snapshot("22")
             if heater_data:
-                _LOGGER.debug("Heater status updated successfully with %d rooms", len(heater_data.get("body", {}).get("contents", [])))
+                _LOGGER.debug("Heater status updated: %d rooms", len(heater_data.get("body", {}).get("contents", [])))
             else:
                 _LOGGER.debug("Heater status_snapshot returned empty data")
         except (ApiError, ConnectionError) as err:
@@ -135,7 +126,6 @@ class CvnetCoordinator(DataUpdateCoordinator[dict]):
         except Exception as err:
             _LOGGER.warning("heater status_snapshot error: %s", err)
 
-        # Refresh light status via websocket
         light_data = {}
         try:
             light_data = await self.client.async_status_snapshot("18")
@@ -148,7 +138,6 @@ class CvnetCoordinator(DataUpdateCoordinator[dict]):
         except Exception as err:
             _LOGGER.warning("light status_snapshot error: %s", err)
 
-        # Refresh telemeter readings (electricity, water, gas)
         telemeter_data = {}
         try:
             telemeter_data = await self.client.async_telemetering()
@@ -161,12 +150,9 @@ class CvnetCoordinator(DataUpdateCoordinator[dict]):
         except Exception as err:
             _LOGGER.warning("telemetering unexpected error: %s", err)
 
-        # Only fail the entire update if both critical data sources fail
         if not visitor_success and not car_success:
             _LOGGER.error("Both visitor and car data updates failed - this may indicate session expiration or connectivity issues")
-            # Force re-authentication on next update by clearing session state
-            if hasattr(self.client, '_last_successful_request'):
-                self.client._last_successful_request = None  # Force session expiration check
+            self.client.invalidate_session()
             raise UpdateFailed("All data sources failed - session may be expired")
 
         # Check for new visitors and fire notifications

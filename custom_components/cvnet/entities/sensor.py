@@ -137,9 +137,6 @@ class CvnetVisitorsSensor(CoordinatorEntity, BaseEntity):
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        super()._handle_coordinator_update()
-        
-        # Update visitor data when coordinator updates
         items = (self.coordinator.data.get("vis") or {}).get("contents") if self.coordinator.data else None
         self._visitor_list = items or []
         file_name = self.coordinator.get_visitor_selected()
@@ -148,9 +145,9 @@ class CvnetVisitorsSensor(CoordinatorEntity, BaseEntity):
         self._file_name = file_name
         if not file_name:
             self._image_data_url = None
-            return
-        # Don't fetch/store full base64 here (keeps state small). Camera entity retrieves image on demand.
-        self._image_data_url = None
+        else:
+            self._image_data_url = None
+        super()._handle_coordinator_update()
 
 
 class CvnetCarEntriesSensor(CoordinatorEntity, BaseEntity):
